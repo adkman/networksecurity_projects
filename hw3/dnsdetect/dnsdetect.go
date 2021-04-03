@@ -25,6 +25,19 @@ var (
     packetTracker  =  make(map[uint16][]dnsPacketInfo)
 )
 
+func printAttackAttempt(packetInfos []dnsPacketInfo) {
+    fmt.Println(packetInfos[0].timestamp.Format("20210309 15:08:49.000000"), "DNS poisoning attempt")
+    fmt.Println("TXID", packetInfos[0].txId, "Request", string(packetInfos[0].question.Name))
+    for i, packetInfo := range packetInfos[1:] {
+        fmt.Print("Answer ", i + 1)
+        for _, answer := range packetInfo.answers {
+            fmt.Print(" ", answer.String(), ",")
+        }
+        fmt.Println("")
+    }
+    fmt.Println()
+}
+
 func handlePacket(packet gopacket.Packet) {
 
     timestamp := packet.Metadata().Timestamp
@@ -51,8 +64,11 @@ func handlePacket(packet gopacket.Packet) {
                 infos = append(infos, pktInfo)
                 packetTracker[dns.ID] = infos
             } else {    // There was a response earlier for this txid. Need to check for attack attempt
+                infos = append(infos, pktInfo)
+                packetTracker[dns.ID] = infos
+
                 if infos[1].packetLength != pktInfo.packetLength { // Currently just checking whether the second response has the same length or not
-                    fmt.Println("Attack was attempted")
+                    printAttackAttempt(infos)
                 }
             }
         } else {    // Should not encounter this case as it means there initially no query for this txID
