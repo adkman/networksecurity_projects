@@ -149,7 +149,9 @@ func handlePacket(handle *pcap.Handle, packet gopacket.Packet, hostnameMap map[s
             sb.WriteString(strconv.FormatUint(uint64(udp.DstPort), 10))
             sb.WriteString(": ")
             sb.WriteString(strconv.FormatUint(uint64(dns.ID), 10))
-            sb.WriteString("+ A? ")
+            sb.WriteString("+ ")
+            sb.WriteString(dns.Questions[0].Type.String())
+            sb.WriteString("? ")
             sb.WriteString(queriedHostname)
             sb.WriteString("\n")
 
