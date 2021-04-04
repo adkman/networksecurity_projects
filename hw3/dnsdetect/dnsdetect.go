@@ -9,6 +9,7 @@ import (
     "github.com/google/gopacket"
     "log"
     "time"
+    "strconv"
 )
 
 type dnsPacketInfo struct {
@@ -20,27 +21,63 @@ type dnsPacketInfo struct {
     answers []layers.DNSResourceRecord
 }
 
+type dnsAttackTrackingInfo struct {
+    queryCount int
+    dnsPacketInfos []dnsPacketInfo
+}
+
 var (
     err             error
-    packetTracker  =  make(map[uint16][]dnsPacketInfo)
+    packetTracker  =  make(map[string]dnsAttackTrackingInfo)
+    timeDelta       int = 5
 )
 
-func printAttackAttempt(packetInfos []dnsPacketInfo) {
-    fmt.Println(packetInfos[0].timestamp.Format("20210309 15:08:49.000000"), "DNS poisoning attempt")
-    fmt.Println("TXID", packetInfos[0].txId, "Request", string(packetInfos[0].question.Name))
-    for i, packetInfo := range packetInfos[1:] {
-        fmt.Print("Answer ", i + 1)
-        for _, answer := range packetInfo.answers {
-            fmt.Print(" ", answer.String(), ",")
+func checkTrackingDelta(packetInfos []dnsPacketInfo, timestamp time.Time) (int, int) {
+    var queryCount = 0
+    var queryIdx = len(packetInfos)
+    for i := len(packetInfos) - 1; i >= 0; i-- {
+        if int(timestamp.Sub(packetInfos[i].timestamp).Seconds()) > timeDelta {
+            return queryIdx, queryCount
         }
-        fmt.Println("")
+        if !packetInfos[i].qr {
+            queryIdx = i
+            queryCount = queryCount + 1
+        }
+    }
+    return 0, queryCount
+}
+
+func printAttackAttempt(packetInfos []dnsPacketInfo) {
+    fmt.Println(packetInfos[0].timestamp.Format(time.StampMicro), "DNS poisoning attempt")
+    fmt.Println("TXID", packetInfos[0].txId, "Request", string(packetInfos[0].question.Name))
+    var ansNum = 0
+    for _, packetInfo := range packetInfos[1:] {
+        if packetInfo.qr {
+            ansNum = ansNum + 1
+            fmt.Print("Answer ", ansNum)
+            for j, answer := range packetInfo.answers {
+                if answer.Type != layers.DNSTypeCNAME {
+                    fmt.Print(" ", answer.Type.String())
+                }
+                fmt.Print(" ", answer.String())
+                if j < len(packetInfo.answers) - 1 {
+                    fmt.Print(",")
+                }
+            }
+            fmt.Println()
+        }
     }
     fmt.Println()
 }
 
 func handlePacket(packet gopacket.Packet) {
 
-    timestamp := packet.Metadata().Timestamp
+    ipv4Layer := packet.Layer(layers.LayerTypeIPv4)
+    if ipv4Layer == nil {
+        log.Println("Error parsing IPv4 layer from packet")
+        return
+    }
+    ip, _ := ipv4Layer.(*layers.IPv4)
 
     dnsLayer := packet.Layer(layers.LayerTypeDNS)
     if dnsLayer == nil {
@@ -51,36 +88,57 @@ func handlePacket(packet gopacket.Packet) {
 
     pktInfo := dnsPacketInfo{
         txId: dns.ID,
-        timestamp: timestamp,
+        timestamp: packet.Metadata().Timestamp,
         qr: dns.QR,
         packetLength: packet.Metadata().Length,
         question: dns.Questions[0],
         answers: dns.Answers,
     }
+
+    // key should be <queried hostname>_<txid>_<client ip>_<dns server ip>
+    var key = string(dns.Questions[0].Name) + "_" + strconv.FormatUint(uint64(dns.ID), 10)
     if dns.QR {     // This is a dns response
-        infos, prs := packetTracker[dns.ID]
+        key = key + "_" + ip.DstIP.String() + "_" + ip.SrcIP.String()
+
+        trackingInfo, prs := packetTracker[key]
         if prs {    // Here, check for any attempt at attack
-            if len(infos) == 1 { // There was no prior dns response for this txid
-                infos = append(infos, pktInfo)
-                packetTracker[dns.ID] = infos
-            } else {    // There was a response earlier for this txid. Need to check for attack attempt
-                infos = append(infos, pktInfo)
-                packetTracker[dns.ID] = infos
+            idx, qc := checkTrackingDelta(trackingInfo.dnsPacketInfos, pktInfo.timestamp)
+            trackingInfo.dnsPacketInfos = trackingInfo.dnsPacketInfos[idx:]
+            trackingInfo.queryCount = qc
 
-                if infos[1].packetLength != pktInfo.packetLength { // Currently just checking whether the second response has the same length or not
-                    printAttackAttempt(infos)
+            // Check whether number of resp packets in the tracker map is less than number of query packets
+            if len(trackingInfo.dnsPacketInfos) - trackingInfo.queryCount < trackingInfo.queryCount {
+                // This is the no attack scenario
+                trackingInfo.dnsPacketInfos = append(trackingInfo.dnsPacketInfos, pktInfo)
+                packetTracker[key] = trackingInfo
+            } else { // Now there is an extra packet for which we need to make sure whether its an attack attempt
+                // Check if this is NOT a legit duplicate packet sent by a buggy dns server
+                length := len(trackingInfo.dnsPacketInfos)
+                if trackingInfo.dnsPacketInfos[length - 1].packetLength != pktInfo.packetLength {
+                    printAttackAttempt(append(trackingInfo.dnsPacketInfos[length - 2:], pktInfo))
                 }
+                // Not adding the extra packet to the tracker map to maintain the equality of query and response packets
             }
-        } else {    // Should not encounter this case as it means there initially no query for this txID
-        }
+        } // else: Ignore this packet as there was no entry for its query packet in the tracker map
     } else {        // This is a dns query
-        _, prs := packetTracker[dns.ID]
-        if prs {    // Need to check whether it received a response or not. If not then this might be a duplicated query. if not, need to remove the entry
+        key = key + "_" + ip.SrcIP.String() + "_" + ip.DstIP.String()
 
-        } else {    // Add entry in the tracker map
+        trackingInfo, prs := packetTracker[key]
+        if prs {
+            // Stop tracking packets which exceed the timeDelta
+            idx, qc := checkTrackingDelta(trackingInfo.dnsPacketInfos, pktInfo.timestamp)
+            trackingInfo.dnsPacketInfos = append(trackingInfo.dnsPacketInfos[idx:], pktInfo)
+            trackingInfo.queryCount = qc + 1
+            // Add the new query packet in the tracker map
+            packetTracker[key] = trackingInfo
+        } else {    // Add new query packet entry in the tracker map
             var tempinfos []dnsPacketInfo
             tempinfos = append(tempinfos, pktInfo)
-            packetTracker[dns.ID] = tempinfos
+            var tempTrackingInfo = dnsAttackTrackingInfo{
+                queryCount: 1,
+                dnsPacketInfos: tempinfos,
+            }
+            packetTracker[key] = tempTrackingInfo
         }
     }
 
@@ -92,6 +150,7 @@ func handlePacket(packet gopacket.Packet) {
 
 func handlePacketSource(handle *pcap.Handle, bpfFilter string) {
     fmt.Println(" [", bpfFilter, "]")
+    fmt.Println()
 
     err = handle.SetBPFFilter(bpfFilter)
     check(err)
@@ -114,7 +173,7 @@ func listenFromInterface(intf string, bpfFilter string) {
 }
 
 func readFromFile(file string, bpfFilter string) {
-    fmt.Print("Reading from pcap file", file)
+    fmt.Print("dnsdetect: Reading from pcap file ", file)
 
     if handle, err := pcap.OpenOffline(file); err != nil {
         log.Fatal(err)
