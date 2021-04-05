@@ -114,7 +114,7 @@ func handlePacket(packet gopacket.Packet) {
             } else { // Now there is an extra packet for which we need to make sure whether its an attack attempt
                 // Check if this is NOT a legit duplicate packet sent by a buggy dns server
                 length := len(trackingInfo.dnsPacketInfos)
-                if trackingInfo.dnsPacketInfos[length - 1].packetLength != pktInfo.packetLength {
+                if trackingInfo.dnsPacketInfos[length - 1].answers[0].String() != pktInfo.answers[0].String() {
                     printAttackAttempt(append(trackingInfo.dnsPacketInfos[length - 2:], pktInfo))
                 }
                 // Not adding the extra packet to the tracker map to maintain the equality of query and response packets
