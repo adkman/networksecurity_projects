@@ -13,23 +13,23 @@ import (
 )
 
 type dnsPacketInfo struct {
-    txId uint16
-    timestamp time.Time
-    qr bool
-    packetLength int
-    question layers.DNSQuestion
-    answers []layers.DNSResourceRecord
+    txId        uint16
+    timestamp   time.Time
+    qr          bool
+    question    layers.DNSQuestion
+    answerCount uint16
+    answers     []layers.DNSResourceRecord
 }
 
 type dnsAttackTrackingInfo struct {
-    queryCount int
-    dnsPacketInfos []dnsPacketInfo
+    queryCount      int
+    dnsPacketInfos  []dnsPacketInfo
 }
 
 var (
-    err             error
-    packetTracker  =  make(map[string]dnsAttackTrackingInfo)
-    timeDelta       int = 5
+    err error
+    packetTracker   =  make(map[string]dnsAttackTrackingInfo)
+    timeDelta int   = 5
 )
 
 func checkTrackingDelta(packetInfos []dnsPacketInfo, timestamp time.Time) (int, int) {
@@ -90,8 +90,8 @@ func handlePacket(packet gopacket.Packet) {
         txId: dns.ID,
         timestamp: packet.Metadata().Timestamp,
         qr: dns.QR,
-        packetLength: packet.Metadata().Length,
         question: dns.Questions[0],
+        answerCount: dns.ANCount,
         answers: dns.Answers,
     }
 
@@ -114,7 +114,9 @@ func handlePacket(packet gopacket.Packet) {
             } else { // Now there is an extra packet for which we need to make sure whether its an attack attempt
                 // Check if this is NOT a legit duplicate packet sent by a buggy dns server
                 length := len(trackingInfo.dnsPacketInfos)
-                if trackingInfo.dnsPacketInfos[length - 1].answers[0].String() != pktInfo.answers[0].String() {
+                if trackingInfo.dnsPacketInfos[length - 1].answerCount != pktInfo.answerCount ||
+                    trackingInfo.dnsPacketInfos[length - 1].answers[0].String() != pktInfo.answers[0].String() {
+
                     printAttackAttempt(append(trackingInfo.dnsPacketInfos[length - 2:], pktInfo))
                 }
                 // Not adding the extra packet to the tracker map to maintain the equality of query and response packets
