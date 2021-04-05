@@ -1,0 +1,140 @@
+CSE 508: Network Security, Spring 2021
+Homework 3: DNS Poisoning and detection
+
+SBU ID: 112683876
+Name: Manish Adkar
+
+Report for dnspoison tool:
+
+To run the program, in the dnspoison folder,
+<prompt>$ sudo go run dnspoison.go [-i interface] [-f hostnames_file] [bpf_filter_expression]
+
+-i interface		Selects the network device to listen on. (Selects the default device, if not provided)
+-f hostnames_file	File containing list of IP address and hostname pairs specifying hostnames to be hijacked
+			(Poisons all the hostnames with the selected interface's IP adress, if not provided)
+bpf_filter_expression	Optional BPF filter to narrow down the attack. (Default value is "udp port 53 and not src <host ip address>")
+
+hostnames_file must be of the format:
+10.6.6.6	foo.example.com
+192.168.66.6	www.cs.stonybrook.edu
+192.168.66.6 *.tcpdump.org
+
+Strategy:
+First, checks whether interface is provided or not. If not, selects the first available interface.
+Then checks whether the hostnames file is provided or not. Reads and maintains a mapping of
+hostname -> ip address in a map. If not provided, adds a single entry in the map ( * -> <interface's ip address>).
+Starts listening on the interface promiscuously.
+For each packet,
+    Decode the DNS layer
+    Check if its a DNS query,
+    Check whether the queried hostname in the question matches any entry key in the map.
+    If yes, then decode the Ethernet, IPv4, UDP layers
+    And create a spoofed response packet and send it on the handle.
+    Then log the packet for which we spoofed the response.
+To create the spoofed response packet, created the layers Ethernet, Ipv4, UDP and DNS.
+Filled the values in all the headers appropriately (Also referred the dnsspoof's response packet's header for the values)
+Added the ip from the hostnames file map as an answer in the DNS layer.
+
+Example output:
+1.
+madkar@ubuntu:~/networksecurity_projects/hw3/dnspoison$ sudo go run dnspoison.go
+No inteface or file specified, will use the default network interface
+dnspoison: Listening on ens33 [ udp port 53 and not src 192.168.20.130 ]
+192.168.20.129:53805 > 8.8.8.8:53: 48949+ A? www.bankofamerica.com
+192.168.20.129:51172 > 8.8.8.8:53: 2428+ A? tcpdump.org
+192.168.20.129:59266 > 8.8.8.8:53: 17247+ A? teredo.ipv6.microsoft.com
+192.168.20.129:52801 > 8.8.8.8:53: 30554+ A? www.cs.stonybrook.edu
+192.168.20.129:61348 > 8.8.8.8:53: 35551+ A? www.google.com
+
+2.
+madkar@ubuntu:~/networksecurity_projects/hw3/dnspoison$ sudo go run dnspoison.go -i ens33 -f hostnames.txt
+dnspoison: Listening on ens33 [ udp port 53 and not src 192.168.20.130 ]
+192.168.20.129:57372 > 8.8.8.8:53: 10230+ A? www.bankofamerica.com
+192.168.20.129:58407 > 8.8.8.8:53: 4569+ A? www.tcpdump.org
+192.168.20.129:58924 > 8.8.8.8:53: 33264+ A? www.cs.stonybrook.edu
+
+3.
+madkar@ubuntu:~/networksecurity_projects/hw3/dnspoison$ sudo go run dnspoison.go -i ens33 -f doesnotexist.txt
+2021/04/04 17:00:14 open doesnotexist.txt: no such file or directory
+exit status 1
+madkar@ubuntu:~/networksecurity_projects/hw3/dnspoison$ sudo go run dnspoison.go -i eth0
+2021/04/04 17:00:22 route ip+net: no such network interface
+exit status 1
+
+attack.pcap is the trace file containing successful poisoning attacks performed using dnspoison.go program.
+
+Report for dnsdetect tool:
+
+To run the program, in the dnsdetect folder,
+<prompt>$ sudo go run dnsdetect.go [-r trace_pcap_file] [-i interface] [bpf_filter_expression]
+
+-r tracefile	        Read packets from a (tcpdump format) tracefile. Gets precedence over the interface if provided.
+-i interface		Selects the network device to listen on. (Selects the default device, if not provided)
+bpf_filter_expression	Optional BPF filter to narrow down the scope of detection. (Default value is "udp port 53")
+
+Strategy to detect dns poisoning attempt:
+The packets are tracked in a map of (key string -> dnsAttackTrackingInfo struct)
+where key is the combination of certain data from the packets: queriedHostname_TxID_clientIP_dnsServerIP
+and dnsAttackTrackingInfo stores two things, the count of query packets and the list of packet data corresponding to that key.
+The key combination helps us to distinguish cases like same txid across different hostnames and different client ips.
+The dnsAttackTrackingInfo struct helps us to avoid false positives in such rare cases like multiple dns queries from the same
+client having same txID and the responses being different due to load balancing.
+Now, for each packet,
+    decode the IP and DNS layers and check whether its a query or response
+    For query packet,
+        if there is no entry in the tracker map, then create a new one with queryCount as 1 and adding this packet to the list.
+        If there is a previous entry, first, remove all the packets which we don't want to track anymore.
+        (Currently assumed that we only want to track packets in a 5 second window)
+        Now, add this query in the list incrementing the count appropriately.
+    For response packet,
+        Firstly remove all the packets which we don't want to track anymore.
+        Now check whether the number of query packets is greater than the number of response packets in the list in tracker map.
+        If greater, then just add the response packet in the list (As this can be a legit response packet, as there are more 
+        queries in the tracker waiting for the response than already arrived responses).
+        If not, then this might be a spoofed packet (or the earlier packet might be a spoofed packet).
+        To identify, check the answer content of the both the response packets.
+        If same, then this is a false positive (as in a rare scenario, a buggy server could resend the same packet).
+        If different, then we can be certain that there was a poisoning attempt through this packet or the earlier packet
+        (depending upon who won the race).
+
+Example output:
+1. attack.pcap is a pcap file containing 3 successful poisoning attacks done using the dnspoison.go program
+madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -r ../dnspoison/attack.pcap
+dnsdetect: Reading from pcap file ../dnspoison/attack_2.pcap [ udp port 53 ]
+
+Apr  1 14:51:38.453057 DNS poisoning attempt
+TXID 27555 Request www.bankofamerica.com
+Answer 1 A 192.168.20.130
+Answer 2 CNAME wwwui.ecglb.bac.com, A 171.159.116.100
+
+Apr  1 14:51:46.775874 DNS poisoning attempt
+TXID 38727 Request www.tcpdump.org
+Answer 1 A 192.168.20.130
+Answer 2 A 192.139.46.66, A 159.89.89.188
+
+Apr  1 14:51:55.212147 DNS poisoning attempt
+TXID 57887 Request www.cs.stonybrook.edu
+Answer 1 A 192.168.20.130
+Answer 2 CNAME live-compscisbu.pantheonsite.io, CNAME fe2.edge.pantheon.io, A 23.185.0.2
+
+2.
+madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -r doesnotexits.pcap
+dnsdetect: Reading from pcap file doesnotexits.pcap2021/04/04 20:36:24 doesnotexits.pcap: No such file or directory
+exit status 1
+
+Setup for testing the programs:
+go version go1.16.2 linux/amd64
+To run/build the program,
+in the source code folder,
+go mod init example.com/dns
+go mod tidy
+sudo go run <program name> <options>
+OR
+go build <program name>
+sudo ./<program name> <options>
+
+The setup for the the DNS attack:
+Windows 7 VM (victim)
+Ubuntu VM (attacker) -  runs the dnspoison program
+                        and also a simple http server using python (sudo python3 -m http.server 80 &)
+
