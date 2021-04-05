@@ -219,7 +219,11 @@ func main() {
         check(err)
 
         networkIntfName = devices[0].Name
-        networkIntfIP = devices[0].Addresses[0].IP
+        for _, addr := range devices[0].Addresses {
+            if networkIntfIP = addr.IP.To4(); networkIntfIP != nil {
+                break
+            }
+        }
     }
 
     // Creating a map to store all of the hostname mappings
