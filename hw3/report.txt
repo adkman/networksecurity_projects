@@ -74,13 +74,14 @@ bpf_filter_expression	Optional BPF filter to narrow down the scope of detection.
 
 Strategy to detect dns poisoning attempt:
 The packets are tracked in a map of (key string -> dnsAttackTrackingInfo struct)
-where key is the combination of certain data from the packets: queriedHostname_TxID_clientIP_dnsServerIP
+where key is the combination of certain data from the packets: queriedHostname_TxID_clientIP_dnsServerIP_clientPort
 and dnsAttackTrackingInfo stores two things, the count of query packets and the list of packet data corresponding to that key.
 The key combination helps us to distinguish cases like same txid across different hostnames and different client ips.
 The dnsAttackTrackingInfo struct helps us to avoid false positives in such rare cases like multiple dns queries from the same
 client having same txID and the responses being different due to load balancing.
 Now, for each packet,
-    decode the IP and DNS layers and check whether its a query or response
+    decode the IP, UDP and DNS layers
+    check whether its a query or response
     For query packet,
         if there is no entry in the tracker map, then create a new one with queryCount as 1 and adding this packet to the list.
         If there is a previous entry, first, remove all the packets which we don't want to track anymore.
@@ -104,18 +105,18 @@ dnsdetect: Reading from pcap file ../dnspoison/attack_2.pcap [ udp port 53 ]
 
 Apr  1 14:51:38.453057 DNS poisoning attempt
 TXID 27555 Request www.bankofamerica.com
-Answer 1 A 192.168.20.130
-Answer 2 CNAME wwwui.ecglb.bac.com, A 171.159.116.100
+Answer 1 192.168.20.130
+Answer 2 171.159.116.100
 
 Apr  1 14:51:46.775874 DNS poisoning attempt
 TXID 38727 Request www.tcpdump.org
-Answer 1 A 192.168.20.130
-Answer 2 A 192.139.46.66, A 159.89.89.188
+Answer 1 192.168.20.130
+Answer 2 192.139.46.66, 159.89.89.188
 
 Apr  1 14:51:55.212147 DNS poisoning attempt
 TXID 57887 Request www.cs.stonybrook.edu
-Answer 1 A 192.168.20.130
-Answer 2 CNAME live-compscisbu.pantheonsite.io, CNAME fe2.edge.pantheon.io, A 23.185.0.2
+Answer 1 192.168.20.130
+Answer 2 23.185.0.2
 
 2.
 madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -r doesnotexits.pcap

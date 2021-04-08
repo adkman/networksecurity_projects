@@ -56,12 +56,11 @@ func printAttackAttempt(packetInfos []dnsPacketInfo) {
             ansNum = ansNum + 1
             fmt.Print("Answer ", ansNum)
             for j, answer := range packetInfo.answers {
-                if answer.Type != layers.DNSTypeCNAME {
-                    fmt.Print(" ", answer.Type.String())
-                }
-                fmt.Print(" ", answer.String())
-                if j < len(packetInfo.answers) - 1 {
-                    fmt.Print(",")
+                if answer.Type == layers.DNSTypeA {
+                    fmt.Print(" ", answer.String())
+                    if j < len(packetInfo.answers) - 1 {
+                        fmt.Print(",")
+                    }
                 }
             }
             fmt.Println()
@@ -79,6 +78,13 @@ func handlePacket(packet gopacket.Packet) {
     }
     ip, _ := ipv4Layer.(*layers.IPv4)
 
+    udpLayer := packet.Layer(layers.LayerTypeUDP)
+    if udpLayer == nil {
+        log.Println("Error parsing UDP layer from packet")
+        return
+    }
+    udp, _ := udpLayer.(*layers.UDP)
+
     dnsLayer := packet.Layer(layers.LayerTypeDNS)
     if dnsLayer == nil {
         log.Println("Error parsing DNS layer from packet")
@@ -95,10 +101,10 @@ func handlePacket(packet gopacket.Packet) {
         answers: dns.Answers,
     }
 
-    // key should be <queried hostname>_<txid>_<client ip>_<dns server ip>
+    // key should be <queried hostname>_<txid>_<client ip>_<dns server ip>_<client port>
     var key = string(dns.Questions[0].Name) + "_" + strconv.FormatUint(uint64(dns.ID), 10)
     if dns.QR {     // This is a dns response
-        key = key + "_" + ip.DstIP.String() + "_" + ip.SrcIP.String()
+        key = key + "_" + ip.DstIP.String() + "_" + ip.SrcIP.String() + "_" + strconv.FormatUint(uint64(udp.DstPort), 10)
 
         trackingInfo, prs := packetTracker[key]
         if prs {    // Here, check for any attempt at attack
@@ -123,7 +129,7 @@ func handlePacket(packet gopacket.Packet) {
             }
         } // else: Ignore this packet as there was no entry for its query packet in the tracker map
     } else {        // This is a dns query
-        key = key + "_" + ip.SrcIP.String() + "_" + ip.DstIP.String()
+        key = key + "_" + ip.SrcIP.String() + "_" + ip.DstIP.String() + "_" + strconv.FormatUint(uint64(udp.SrcPort), 10)
 
         trackingInfo, prs := packetTracker[key]
         if prs {
