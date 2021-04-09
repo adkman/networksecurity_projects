@@ -214,7 +214,7 @@ func main() {
     } else if *intfPtr != "" {
         listenFromInterface(*intfPtr, bpfFilterStr)
     } else {
-        fmt.Println("No inteface or file specified, will use the default network interface")
+        fmt.Println("No interface or file specified, will use the default network interface")
         devices, err := pcap.FindAllDevs()
         check(err)
 
