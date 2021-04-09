@@ -11,8 +11,9 @@ To run the program, in the dnspoison folder,
 
 -i interface		Selects the network device to listen on. (Selects the default device, if not provided)
 -f hostnames_file	File containing list of IP address and hostname pairs specifying hostnames to be hijacked
-			(Poisons all the hostnames with the selected interface's IP adress, if not provided)
-bpf_filter_expression	Optional BPF filter to narrow down the attack. (Default value is "udp port 53 and not src <host ip address>")
+			(Poisons all the hostnames with the selected interface's IP address, if not provided)
+bpf_filter_expression	Optional BPF filter to narrow down the attack.
+                        (Default value is "udp port 53 and not src <selected interface's IP address>")
 
 hostnames_file must be of the format:
 10.6.6.6	foo.example.com
@@ -61,14 +62,16 @@ madkar@ubuntu:~/networksecurity_projects/hw3/dnspoison$ sudo go run dnspoison.go
 2021/04/04 17:00:22 route ip+net: no such network interface
 exit status 1
 
+
 attack.pcap is the trace file containing successful poisoning attacks performed using dnspoison.go program.
+
 
 Report for dnsdetect tool:
 
 To run the program, in the dnsdetect folder,
-<prompt>$ sudo go run dnsdetect.go [-r trace_pcap_file] [-i interface] [bpf_filter_expression]
+<prompt>$ sudo go run dnsdetect.go [-r pcap_tracefile] [-i interface] [bpf_filter_expression]
 
--r tracefile	        Read packets from a (tcpdump format) tracefile. Gets precedence over the interface if provided.
+-r pcap_tracefile	Read packets from a (tcpdump format) tracefile. Gets precedence over the interface if provided.
 -i interface		Selects the network device to listen on. (Selects the default device, if not provided)
 bpf_filter_expression	Optional BPF filter to narrow down the scope of detection. (Default value is "udp port 53")
 
@@ -100,7 +103,7 @@ Now, for each packet,
 
 Example output:
 1. attack.pcap is a pcap file containing 3 successful poisoning attacks done using the dnspoison.go program
-madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -r ../dnspoison/attack.pcap
+madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -r ../attack.pcap
 dnsdetect: Reading from pcap file ../dnspoison/attack_2.pcap [ udp port 53 ]
 
 Apr  1 14:51:38.453057 DNS poisoning attempt
@@ -118,10 +121,39 @@ TXID 57887 Request www.cs.stonybrook.edu
 Answer 1 192.168.20.130
 Answer 2 23.185.0.2
 
-2.
+2. 
+madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -i ens33
+dnsdetect: Listening on ens33 [ udp port 53 ]
+
+Apr  9 10:05:32.585591 DNS poisoning attempt
+TXID 45502 Request www.tcpdump.org
+Answer 1 192.168.20.130
+Answer 2 159.89.89.188, 192.139.46.66
+
+3.
+madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -i ens33 -r ../attack.pcap
+dnsdetect: Reading from pcap file ../attack.pcap [ udp port 53 ]
+
+Apr  1 14:51:38.453057 DNS poisoning attempt
+TXID 27555 Request www.bankofamerica.com
+Answer 1 192.168.20.130
+Answer 2 171.159.116.100
+
+Apr  1 14:51:46.775874 DNS poisoning attempt
+TXID 38727 Request www.tcpdump.org
+Answer 1 192.168.20.130
+Answer 2 192.139.46.66, 159.89.89.188
+
+Apr  1 14:51:55.212147 DNS poisoning attempt
+TXID 57887 Request www.cs.stonybrook.edu
+Answer 1 192.168.20.130
+Answer 2 23.185.0.2
+
+4.
 madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -r doesnotexits.pcap
 dnsdetect: Reading from pcap file doesnotexits.pcap2021/04/04 20:36:24 doesnotexits.pcap: No such file or directory
 exit status 1
+
 
 Setup for testing the programs:
 go version go1.16.2 linux/amd64
