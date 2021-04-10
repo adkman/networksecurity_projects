@@ -48,8 +48,8 @@ func checkTrackingDelta(packetInfos []dnsPacketInfo, timestamp time.Time) (int, 
 }
 
 func printAttackAttempt(packetInfos []dnsPacketInfo) {
-    fmt.Println(packetInfos[0].timestamp.Format(time.StampMicro), "DNS poisoning attempt")
-    fmt.Println("TXID", packetInfos[0].txId, "Request", string(packetInfos[0].question.Name))
+    fmt.Printf("%s DNS poisoning attempt\n", packetInfos[0].timestamp)
+    fmt.Printf("TXID 0x%x Request %s\n", uint16(packetInfos[0].txId), packetInfos[0].question.Name)
     var ansNum = 0
     for _, packetInfo := range packetInfos[1:] {
         if packetInfo.qr {
@@ -157,11 +157,10 @@ func handlePacket(packet gopacket.Packet) {
 }
 
 func handlePacketSource(handle *pcap.Handle, bpfFilter string) {
-    fmt.Println(" [", bpfFilter, "]")
-    fmt.Println()
-
     err = handle.SetBPFFilter(bpfFilter)
     check(err)
+
+    fmt.Println()
 
     packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
     for packet := range packetSource.Packets() {
@@ -170,23 +169,21 @@ func handlePacketSource(handle *pcap.Handle, bpfFilter string) {
 }
 
 func listenFromInterface(intf string, bpfFilter string) {
-    fmt.Print("dnsdetect: Listening on ", intf)
-
     if handle, err := pcap.OpenLive(intf, 65536, true, pcap.BlockForever); err != nil {
         log.Fatal(err)
     } else {
         defer handle.Close()
+        fmt.Println("dnsdetect: Listening on", intf, "[", bpfFilter, "]")
         handlePacketSource(handle, bpfFilter)
     }
 }
 
 func readFromFile(file string, bpfFilter string) {
-    fmt.Print("dnsdetect: Reading from pcap file ", file)
-
     if handle, err := pcap.OpenOffline(file); err != nil {
         log.Fatal(err)
     } else {
         defer handle.Close()
+        fmt.Println("dnsdetect: Reading from pcap file", file, "[", bpfFilter, "]")
         handlePacketSource(handle, bpfFilter)
     }
 }
