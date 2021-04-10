@@ -106,18 +106,18 @@ Example output:
 madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -r ../attack.pcap
 dnsdetect: Reading from pcap file ../dnspoison/attack_2.pcap [ udp port 53 ]
 
-Apr  1 14:51:38.453057 DNS poisoning attempt
-TXID 27555 Request www.bankofamerica.com
+2021-04-01 14:51:38.453057 -0700 PDT DNS poisoning attempt
+TXID 0x6ba3 Request www.bankofamerica.com
 Answer 1 192.168.20.130
 Answer 2 171.159.116.100
 
-Apr  1 14:51:46.775874 DNS poisoning attempt
-TXID 38727 Request www.tcpdump.org
+2021-04-01 14:51:46.775874 -0700 PDT DNS poisoning attempt
+TXID 0x9747 Request www.tcpdump.org
 Answer 1 192.168.20.130
 Answer 2 192.139.46.66, 159.89.89.188
 
-Apr  1 14:51:55.212147 DNS poisoning attempt
-TXID 57887 Request www.cs.stonybrook.edu
+2021-04-01 14:51:55.212147 -0700 PDT DNS poisoning attempt
+TXID 0xe21f Request www.cs.stonybrook.edu
 Answer 1 192.168.20.130
 Answer 2 23.185.0.2
 
@@ -125,7 +125,7 @@ Answer 2 23.185.0.2
 madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -i ens33
 dnsdetect: Listening on ens33 [ udp port 53 ]
 
-Apr  9 10:05:32.585591 DNS poisoning attempt
+2021-04-09 16:50:40.337897 -0700 PDT DNS poisoning attempt
 TXID 45502 Request www.tcpdump.org
 Answer 1 192.168.20.130
 Answer 2 159.89.89.188, 192.139.46.66
@@ -134,18 +134,18 @@ Answer 2 159.89.89.188, 192.139.46.66
 madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -i ens33 -r ../attack.pcap
 dnsdetect: Reading from pcap file ../attack.pcap [ udp port 53 ]
 
-Apr  1 14:51:38.453057 DNS poisoning attempt
-TXID 27555 Request www.bankofamerica.com
+2021-04-01 14:51:38.453057 -0700 PDT DNS poisoning attempt
+TXID 0x6ba3 Request www.bankofamerica.com
 Answer 1 192.168.20.130
 Answer 2 171.159.116.100
 
-Apr  1 14:51:46.775874 DNS poisoning attempt
-TXID 38727 Request www.tcpdump.org
+2021-04-01 14:51:46.775874 -0700 PDT DNS poisoning attempt
+TXID 0x9747 Request www.tcpdump.org
 Answer 1 192.168.20.130
 Answer 2 192.139.46.66, 159.89.89.188
 
-Apr  1 14:51:55.212147 DNS poisoning attempt
-TXID 57887 Request www.cs.stonybrook.edu
+2021-04-01 14:51:55.212147 -0700 PDT DNS poisoning attempt
+TXID 0xe21f Request www.cs.stonybrook.edu
 Answer 1 192.168.20.130
 Answer 2 23.185.0.2
 
@@ -154,17 +154,17 @@ madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go
 No interface or file specified, will use the default network interface
 dnsdetect: Listening on ens33 [ udp port 53 ]
 
-Apr  9 10:22:50.215813 DNS poisoning attempt
+2021-04-09 16:52:33.879564 -0700 PDT DNS poisoning attempt
 TXID 23201 Request www.cs.stonybrook.edu
 Answer 1 192.168.20.130
 Answer 2 23.185.0.2
 
 5.
 madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -r doesnotexits.pcap
-dnsdetect: Reading from pcap file doesnotexits.pcap2021/04/04 20:36:24 doesnotexits.pcap: No such file or directory
+2021/04/04 20:36:24 doesnotexits.pcap: No such file or directory
 exit status 1
 madkar@ubuntu:~/networksecurity_projects/hw3/dnsdetect$ sudo go run dnsdetect.go -i eth0
-dnsdetect: Listening on eth02021/04/09 10:25:01 eth0: No such device exists (SIOCGIFHWADDR: No such device)
+2021/04/09 10:25:01 eth0: No such device exists (SIOCGIFHWADDR: No such device)
 exit status 1
 
 
