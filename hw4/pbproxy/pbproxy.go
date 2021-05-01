@@ -157,18 +157,19 @@ func readAndSend() {
         }
     }()
 
-    stdinData := make([]byte, 0)
+    stdinData := make([]byte, 1600)
+
     for {
         //log.Println("READING FROM STDIN")
-        if data, err := reader.ReadByte(); err == nil {
-            stdinData = append(stdinData, data)
-        } else if err == io.EOF {
+        if n, err := reader.Read(stdinData); err == nil {
+            //stdinData = append(stdinData, data)
+        //} else if err == io.EOF {
 //            log.Println("Before encrypt", len(stdinData))
             encryptedData := encrypt(stdinData)
 //            log.Println("After encrypt", len(encryptedData))
             _, err := conn.Write(encryptedData)
             check(err)
-            stdinData = make([]byte, 0)
+          //  stdinData = make([]byte, 0)
             //log.Println("WRITE TO SERVER DONE")
         } else {
             //log.Println("BROKE 1")
