@@ -165,7 +165,7 @@ func readAndSend() {
             //stdinData = append(stdinData, data)
         //} else if err == io.EOF {
 //            log.Println("Before encrypt", len(stdinData))
-            encryptedData := encrypt(stdinData)
+encryptedData := encrypt(stdinData[:n])
 //            log.Println("After encrypt", len(encryptedData))
             _, err := conn.Write(encryptedData)
             check(err)
