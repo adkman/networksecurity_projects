@@ -31,7 +31,7 @@ func check(e error) {
 func encrypt(plaintext []byte) []byte {
     salt := make([]byte, saltLength)
     rand.Read(salt)
-    log.Println("esalt", len(salt), hex.Dump(salt))
+//    log.Println("esalt", len(salt), hex.Dump(salt))
     aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
 
     block, err := aes.NewCipher(aesKey)
@@ -42,19 +42,19 @@ func encrypt(plaintext []byte) []byte {
 
     nonce := make([]byte, aesgcm.NonceSize())
     rand.Read(nonce)
-    log.Println("enonce", len(nonce), hex.Dump(nonce))
+//    log.Println("enonce", len(nonce), hex.Dump(nonce))
 
     data := append(salt, nonce...)
-    log.Println("eplaintext", len(plaintext), hex.Dump(plaintext))
+//    log.Println("eplaintext", len(plaintext), hex.Dump(plaintext))
     encryptedData := aesgcm.Seal(data, nonce, plaintext, nil)
-    log.Println("eencryptedData", len(encryptedData), hex.Dump(encryptedData))
+//    log.Println("eencryptedData", len(encryptedData), hex.Dump(encryptedData))
     return encryptedData
 }
 
 func decrypt(data []byte) []byte {
 
     salt := data[:saltLength]
-    log.Println("dsalt", len(salt), hex.Dump(salt))
+//    log.Println("dsalt", len(salt), hex.Dump(salt))
 
     aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
 
@@ -66,12 +66,12 @@ func decrypt(data []byte) []byte {
 
     nonceSize := aesgcm.NonceSize()
     nonce := data[saltLength : nonceSize + saltLength]
-    log.Println("dnonce", len(nonce), hex.Dump(nonce))
+//    log.Println("dnonce", len(nonce), hex.Dump(nonce))
     encryptedData := data[nonceSize + saltLength : ]
-    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
+//    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
 
     plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
-    log.Println("dplaintext", len(plaintext), hex.Dump(plaintext))
+//    log.Println("dplaintext", len(plaintext), hex.Dump(plaintext))
     check(err)
 
     return plaintext
@@ -100,7 +100,7 @@ func handleConnection (clientConn net.Conn) {
             }
         }
     }()
-    clientData := make([]byte, 1600)
+    clientData := make([]byte, 37)
     for {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
@@ -116,7 +116,7 @@ func handleConnection (clientConn net.Conn) {
         }
     }
 
-    log.Println("Closing...")
+//    log.Println("Closing...")
     serviceConn.Close()
     clientConn.Close()
 }
