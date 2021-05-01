@@ -13,7 +13,7 @@ import (
     "crypto/cipher"
     "crypto/rand"
     "crypto/sha256"
-    "encoding/hex"
+//    "encoding/hex"
 )
 
 var (
@@ -55,7 +55,7 @@ func encrypt(plaintext []byte) []byte {
 func decrypt(data []byte) []byte {
 
     salt := data[:saltLength]
-    log.Println("dsalt", len(salt), hex.Dump(salt))
+//    log.Println("dsalt", len(salt), hex.Dump(salt))
 
     aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
 
@@ -67,12 +67,12 @@ func decrypt(data []byte) []byte {
 
     nonceSize := aesgcm.NonceSize()
     nonce := data[saltLength : nonceSize + saltLength]
-    log.Println("dnonce", len(nonce))
+//    log.Println("dnonce", len(nonce))
     encryptedData := data[nonceSize + saltLength : ]
-    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
+//    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
 
     plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
-    log.Println("dplaintext", len(plaintext))
+//    log.Println("dplaintext", len(plaintext))
     check(err)
 
     return plaintext
