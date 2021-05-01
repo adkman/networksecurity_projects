@@ -101,7 +101,7 @@ func handleConnection (clientConn net.Conn) {
             }
         }
     }()
-    clientData := make([]byte, 1620)
+    clientData := make([]byte, 1636)
     for {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
@@ -140,7 +140,7 @@ func readAndSend() {
     conn, err := net.Dial("tcp", destination + ":" + port)
     check(err)
 
-    serverData := make([]byte, 1620)
+    serverData := make([]byte, 1636)
     go func() {
         for {
             //log.Println("READING FROM SERVER")
