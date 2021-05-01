@@ -18,6 +18,7 @@ var (
     destination string
     port string
     passwd string
+    saltLength int = 8
 )
 
 func check(e error) {
@@ -27,18 +28,18 @@ func check(e error) {
 }
 
 func encrypt(plaintext []byte) []byte {
-    salt := make([]byte, 8)
+    salt := make([]byte, saltLength)
     rand.Read(salt)
     aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
 
     block, err := aes.NewCipher(aesKey)
     check(err)
 
-    nonce := make([]byte, 32)
-    rand.Read(nonce)
+    aesgcm, err := cipher.NewGCM(block)
     check(err)
 
-    aesgcm, err := cipher.NewGCM(block)
+    nonce := make([]byte, aesgcm.NonceSize())
+    rand.Read(nonce)
     check(err)
 
     data := append(salt, nonce...)
@@ -46,9 +47,8 @@ func encrypt(plaintext []byte) []byte {
 }
 
 func decrypt(data []byte) []byte {
-    salt := data[:8]
-    nonce := data[8:40]
-    encryptedData := data[40:]
+
+    salt := data[:saltLength]
 
     aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
 
@@ -57,6 +57,11 @@ func decrypt(data []byte) []byte {
 
     aesgcm, err := cipher.NewGCM(block)
     check(err)
+
+    nonceSize := aesgcm.NonceSize()
+
+    nonce := data[saltLength : nonceSize + saltLength]
+    encryptedData := data[nonceSize + saltLength : ]
 
     plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
     check(err)
@@ -91,7 +96,9 @@ func handleConnection (clientConn net.Conn) {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
             //log.Println("READ FROM CLIENT DONE", nr1, hex.Dump(clientData[:nr1]))
+            log.Println("GOT", nr1)
             decryptedClientData := decrypt(clientData[:nr1])
+            log.Println("SENDING", len(decryptedClientData))
             _, err := serviceConn.Write(decryptedClientData)
             check(err)
             //log.Println("WRITE TO SERVICE DONE", nw1, hex.Dump(clientData[:nw1]))
