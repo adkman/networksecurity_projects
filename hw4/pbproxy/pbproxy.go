@@ -7,9 +7,11 @@ import (
     "os"
     "bufio"
     "net"
-//    "encoding/hex"
-    //"bytes"
-//    "io"
+    "golang.org/x/crypto/pbkdf2"
+    "crypto/aes"
+    "crypto/cipher"
+    "crypto/rand"
+    "crypto/sha256"
 )
 
 var (
@@ -24,6 +26,44 @@ func check(e error) {
     }
 }
 
+func encrypt(plaintext []byte) []byte {
+    salt := make([]byte, 8)
+    rand.Read(salt)
+    aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
+
+    block, err := aes.NewCipher(aesKey)
+    check(err)
+
+    nonce := make([]byte, 32)
+    rand.Read(nonce)
+    check(err)
+
+    aesgcm, err := cipher.NewGCM(block)
+    check(err)
+
+    data := append(salt, nonce...)
+    return aesgcm.Seal(data, nonce, plaintext, nil)
+}
+
+func decrypt(data []byte) []byte {
+    salt := data[:8]
+    nonce := data[8:40]
+    encryptedData := data[40:]
+
+    aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
+
+    block, err := aes.NewCipher(aesKey)
+    check(err)
+
+    aesgcm, err := cipher.NewGCM(block)
+    check(err)
+
+    plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
+    check(err)
+
+    return plaintext
+}
+
 func handleConnection (clientConn net.Conn) {
     serviceConn, err := net.Dial("tcp", destination + ":" + port)
     if err != nil {
@@ -36,7 +76,8 @@ func handleConnection (clientConn net.Conn) {
             //log.Println("READING FROM SERVICE")
             if nr2, err := serviceConn.Read(serviceData); err == nil {
                 //log.Println("READ FROM SERVICE DONE", nr2, hex.Dump(serviceData[:nr2]))
-                _, err := clientConn.Write(serviceData[:nr2])
+                encryptedServiceData := encrypt(serviceData[:nr2])
+                _, err := clientConn.Write(encryptedServiceData)
                 check(err)
                 //log.Println("WRITE TO CLIENT DONE", nw2, hex.Dump(serviceData[:nw2]))
             } else {
@@ -50,7 +91,8 @@ func handleConnection (clientConn net.Conn) {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
             //log.Println("READ FROM CLIENT DONE", nr1, hex.Dump(clientData[:nr1]))
-            _, err := serviceConn.Write(clientData[:nr1])
+            decryptedClientData := decrypt(clientData[:nr1])
+            _, err := serviceConn.Write(decryptedClientData)
             check(err)
             //log.Println("WRITE TO SERVICE DONE", nw1, hex.Dump(clientData[:nw1]))
         } else {
@@ -89,7 +131,8 @@ func readAndSend() {
             //log.Println("READING FROM SERVER")
             if n, err := conn.Read(serverData); err == nil {
                 //log.Println("READ FROM SERVER", n, hex.Dump(serverData[:n]))
-                os.Stdout.Write(serverData[:n])
+                decryptedData := decrypt(serverData[:n])
+                os.Stdout.Write(decryptedData)
                 //log.Println("WRITE TO STDOUT DONE")
             } else {
                 //log.Println("BROKE")
@@ -103,7 +146,8 @@ func readAndSend() {
         if data, err := reader.ReadByte(); err == nil {
             stdinData[0] = data
             //log.Println("READ FROM STDIN DONE", hex.Dump(stdinData))
-            _, err := conn.Write(stdinData)
+            encryptedData := encrypt(stdinData)
+            _, err := conn.Write(encryptedData)
             check(err)
             //log.Println("WRITE TO SERVER DONE")
         } else {
