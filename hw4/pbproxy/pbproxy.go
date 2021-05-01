@@ -45,7 +45,10 @@ func encrypt(plaintext []byte) []byte {
     log.Println("enonce", len(nonce), hex.Dump(nonce))
 
     data := append(salt, nonce...)
-    return aesgcm.Seal(data, nonce, plaintext, nil)
+    log.Println("eplaintext", len(plaintext), hex.Dump(plaintext))
+    encryptedData := aesgcm.Seal(data, nonce, plaintext, nil)
+    log.Println("eencryptedData", len(encryptedData), hex.Dump(encryptedData))
+    return encryptedData
 }
 
 func decrypt(data []byte) []byte {
@@ -65,8 +68,10 @@ func decrypt(data []byte) []byte {
     nonce := data[saltLength : nonceSize + saltLength]
     log.Println("dnonce", len(nonce), hex.Dump(nonce))
     encryptedData := data[nonceSize + saltLength : ]
+    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
 
     plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
+    log.Println("dplaintext", len(plaintext), hex.Dump(plaintext))
     check(err)
 
     return plaintext
@@ -83,9 +88,9 @@ func handleConnection (clientConn net.Conn) {
         for {
             //log.Println("READING FROM SERVICE")
             if nr2, err := serviceConn.Read(serviceData); err == nil {
-                log.Println("Before Encrypt", nr2)
+//                log.Println("Before Encrypt", nr2)
                 encryptedServiceData := encrypt(serviceData[:nr2])
-                log.Println("After Encrypt", len(encryptedServiceData))
+//                log.Println("After Encrypt", len(encryptedServiceData))
                 _, err := clientConn.Write(encryptedServiceData)
                 check(err)
                 //log.Println("WRITE TO CLIENT DONE", nw2, hex.Dump(serviceData[:nw2]))
@@ -99,9 +104,9 @@ func handleConnection (clientConn net.Conn) {
     for {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
-            log.Println("Before Decrypt", nr1)
+//            log.Println("Before Decrypt", nr1)
             decryptedClientData := decrypt(clientData[:nr1])
-            log.Println("After Decrypt", len(decryptedClientData))
+//            log.Println("After Decrypt", len(decryptedClientData))
             _, err := serviceConn.Write(decryptedClientData)
             check(err)
             //log.Println("WRITE TO SERVICE DONE", nw1, hex.Dump(clientData[:nw1]))
@@ -140,9 +145,9 @@ func readAndSend() {
         for {
             //log.Println("READING FROM SERVER")
             if n, err := conn.Read(serverData); err == nil {
-                log.Println("Before decrypt", n)
+//                log.Println("Before decrypt", n)
                 decryptedData := decrypt(serverData[:n])
-                log.Println("After decrypt", len(decryptedData))
+//                log.Println("After decrypt", len(decryptedData))
                 os.Stdout.Write(decryptedData)
                 //log.Println("WRITE TO STDOUT DONE")
             } else {
@@ -156,9 +161,9 @@ func readAndSend() {
         //log.Println("READING FROM STDIN")
         if data, err := reader.ReadByte(); err == nil {
             stdinData[0] = data
-            log.Println("Before encrypt", len(stdinData))
+//            log.Println("Before encrypt", len(stdinData))
             encryptedData := encrypt(stdinData)
-            log.Println("After encrypt", len(encryptedData))
+//            log.Println("After encrypt", len(encryptedData))
             _, err := conn.Write(encryptedData)
             check(err)
             //log.Println("WRITE TO SERVER DONE")
