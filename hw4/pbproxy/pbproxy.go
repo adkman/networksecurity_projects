@@ -140,8 +140,9 @@ func readAndSend() {
         for {
             //log.Println("READING FROM SERVER")
             if n, err := conn.Read(serverData); err == nil {
-                //log.Println("READ FROM SERVER", n, hex.Dump(serverData[:n]))
+                log.Println("Before decrypt", n)
                 decryptedData := decrypt(serverData[:n])
+                log.Println("After decrypt", len(decryptedData))
                 os.Stdout.Write(decryptedData)
                 //log.Println("WRITE TO STDOUT DONE")
             } else {
@@ -155,8 +156,9 @@ func readAndSend() {
         //log.Println("READING FROM STDIN")
         if data, err := reader.ReadByte(); err == nil {
             stdinData[0] = data
-            //log.Println("READ FROM STDIN DONE", hex.Dump(stdinData))
+            log.Println("Before encrypt", len(stdinData))
             encryptedData := encrypt(stdinData)
+            log.Println("After encrypt", len(encryptedData))
             _, err := conn.Write(encryptedData)
             check(err)
             //log.Println("WRITE TO SERVER DONE")
