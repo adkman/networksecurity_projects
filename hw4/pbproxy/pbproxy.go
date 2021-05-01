@@ -100,7 +100,7 @@ func handleConnection (clientConn net.Conn) {
             }
         }
     }()
-    clientData := make([]byte, 37)
+    clientData := make([]byte, 1600)
     for {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
@@ -140,7 +140,6 @@ func readAndSend() {
     check(err)
 
     serverData := make([]byte, 1600)
-    stdinData := make([]byte, 1)
     go func() {
         for {
             //log.Println("READING FROM SERVER")
@@ -157,22 +156,24 @@ func readAndSend() {
         }
     }()
 
+    stdinData := make([]byte, 0)
     for {
         //log.Println("READING FROM STDIN")
         if data, err := reader.ReadByte(); err == nil {
-            stdinData[0] = data
+            stdinData = append(stdinData, data)
+        } else if err == io.EOF {
 //            log.Println("Before encrypt", len(stdinData))
             encryptedData := encrypt(stdinData)
 //            log.Println("After encrypt", len(encryptedData))
             _, err := conn.Write(encryptedData)
             check(err)
+            stdinData = make([]byte, 0)
             //log.Println("WRITE TO SERVER DONE")
         } else {
             //log.Println("BROKE 1")
             break
         }
     }
-    log.Println("Closing...")
     conn.Close()
 }
 
