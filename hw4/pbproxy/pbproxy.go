@@ -13,7 +13,7 @@ import (
     "crypto/cipher"
     "crypto/rand"
     "crypto/sha256"
-    //"encoding/hex"
+    "encoding/hex"
 )
 
 var (
@@ -55,7 +55,7 @@ func encrypt(plaintext []byte) []byte {
 func decrypt(data []byte) []byte {
 
     salt := data[:saltLength]
-//    log.Println("dsalt", len(salt), hex.Dump(salt))
+    log.Println("dsalt", len(salt), hex.Dump(salt))
 
     aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
 
@@ -67,12 +67,12 @@ func decrypt(data []byte) []byte {
 
     nonceSize := aesgcm.NonceSize()
     nonce := data[saltLength : nonceSize + saltLength]
-//    log.Println("dnonce", len(nonce))
+    log.Println("dnonce", len(nonce))
     encryptedData := data[nonceSize + saltLength : ]
-//    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
+    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
 
     plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
-//    log.Println("dplaintext", len(plaintext))
+    log.Println("dplaintext", len(plaintext))
     check(err)
 
     return plaintext
@@ -84,7 +84,7 @@ func handleConnection (clientConn *net.TCPConn) {
         log.Println("Error connecting to the service", err)
         return
     }
-    serviceData := make([]byte, 1600)
+    serviceData := make([]byte, 4096)
     go func() {
         for {
             //log.Println("READING FROM SERVICE")
@@ -101,7 +101,7 @@ func handleConnection (clientConn *net.TCPConn) {
             }
         }
     }()
-    clientData := make([]byte, 1636)
+    clientData := make([]byte, 4132)
     for {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
@@ -133,8 +133,8 @@ func listen(port string) {
         conn, err := ln.AcceptTCP()
         check(err)
 
-        conn.SetReadBuffer(1636)
-        conn.SetWriteBuffer(1636)
+        conn.SetReadBuffer(4132)
+        conn.SetWriteBuffer(4132)
         go handleConnection(conn)
     }
 }
@@ -147,10 +147,10 @@ func readAndSend() {
 
     conn, err := net.DialTCP("tcp", nil, addr)
     check(err)
-    conn.SetReadBuffer(1636)
-    conn.SetWriteBuffer(1636)
+    conn.SetReadBuffer(4132)
+    conn.SetWriteBuffer(4132)
 
-    serverData := make([]byte, 1636)
+    serverData := make([]byte, 4132)
     go func() {
         for {
             //log.Println("READING FROM SERVER")
@@ -167,7 +167,7 @@ func readAndSend() {
         }
     }()
 
-    stdinData := make([]byte, 1600)
+    stdinData := make([]byte, 4096)
 
     for {
         //log.Println("READING FROM STDIN")
