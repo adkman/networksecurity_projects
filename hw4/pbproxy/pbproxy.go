@@ -13,7 +13,7 @@ import (
     "crypto/cipher"
     "crypto/rand"
     "crypto/sha256"
-    "encoding/hex"
+    //"encoding/hex"
 )
 
 var (
@@ -78,7 +78,7 @@ func decrypt(data []byte) []byte {
     return plaintext
 }
 
-func handleConnection (clientConn net.TCPConn) {
+func handleConnection (clientConn *net.TCPConn) {
     serviceConn, err := net.Dial("tcp", destination + ":" + port)
     if err != nil {
         log.Println("Error connecting to the service", err)
@@ -123,7 +123,10 @@ func handleConnection (clientConn net.TCPConn) {
 }
 
 func listen(port string) {
-    ln, err := net.ListenTCP("tcp", ":" + port)
+    addr, err := net.ResolveTCPAddr("tcp", ":" + port)
+    check(err)
+
+    ln, err := net.ListenTCP("tcp", addr)
     check(err)
 
     for {
@@ -139,10 +142,13 @@ func listen(port string) {
 func readAndSend() {
     reader := bufio.NewReader(os.Stdin)
 
-    conn, err := net.DialTCP("tcp", destination + ":" + port)
+    addr, err := net.ResolveTCPAddr("tcp", destination + ":" + port)
     check(err)
-    conn.setReadBuffer(1636)
-    conn.setWriteBuffer(1636)
+
+    conn, err := net.DialTCP("tcp", nil, addr)
+    check(err)
+    conn.SetReadBuffer(1636)
+    conn.SetWriteBuffer(1636)
 
     serverData := make([]byte, 1636)
     go func() {
