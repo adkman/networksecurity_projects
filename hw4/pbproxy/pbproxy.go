@@ -30,8 +30,8 @@ func check(e error) {
 
 func encrypt(plaintext []byte) []byte {
     salt := make([]byte, saltLength)
-//    log.Println("salt", len(salt), hex.Dump(salt))
     rand.Read(salt)
+    log.Println("esalt", len(salt), hex.Dump(salt))
     aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
 
     block, err := aes.NewCipher(aesKey)
@@ -42,7 +42,7 @@ func encrypt(plaintext []byte) []byte {
 
     nonce := make([]byte, aesgcm.NonceSize())
     rand.Read(nonce)
-//    log.Println("nonce", len(nonce), hex.Dump(nonce))
+    log.Println("enonce", len(nonce), hex.Dump(nonce))
 
     data := append(salt, nonce...)
     return aesgcm.Seal(data, nonce, plaintext, nil)
@@ -51,6 +51,7 @@ func encrypt(plaintext []byte) []byte {
 func decrypt(data []byte) []byte {
 
     salt := data[:saltLength]
+    log.Println("dsalt", len(salt), hex.Dump(salt))
 
     aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
 
@@ -61,8 +62,8 @@ func decrypt(data []byte) []byte {
     check(err)
 
     nonceSize := aesgcm.NonceSize()
-
     nonce := data[saltLength : nonceSize + saltLength]
+    log.Println("dnonce", len(nonce), hex.Dump(nonce))
     encryptedData := data[nonceSize + saltLength : ]
 
     plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
@@ -82,9 +83,9 @@ func handleConnection (clientConn net.Conn) {
         for {
             //log.Println("READING FROM SERVICE")
             if nr2, err := serviceConn.Read(serviceData); err == nil {
-//                log.Println("Before", nr2, hex.Dump(serviceData[:nr2]))
+                log.Println("Before Encrypt", nr2)
                 encryptedServiceData := encrypt(serviceData[:nr2])
-//                log.Println("After", len(encryptedServiceData), hex.Dump(encryptedServiceData[:len(encryptedServiceData)]))
+                log.Println("After Encrypt", len(encryptedServiceData))
                 _, err := clientConn.Write(encryptedServiceData)
                 check(err)
                 //log.Println("WRITE TO CLIENT DONE", nw2, hex.Dump(serviceData[:nw2]))
@@ -98,8 +99,9 @@ func handleConnection (clientConn net.Conn) {
     for {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
-            //log.Println("READ FROM CLIENT DONE", nr1, hex.Dump(clientData[:nr1]))
+            log.Println("Before Decrypt", nr1)
             decryptedClientData := decrypt(clientData[:nr1])
+            log.Println("After Decrypt", len(decryptedClientData))
             _, err := serviceConn.Write(decryptedClientData)
             check(err)
             //log.Println("WRITE TO SERVICE DONE", nw1, hex.Dump(clientData[:nw1]))
