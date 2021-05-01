@@ -13,7 +13,7 @@ import (
     "crypto/cipher"
     "crypto/rand"
     "crypto/sha256"
-//    "encoding/hex"
+    "encoding/hex"
 )
 
 var (
@@ -67,18 +67,18 @@ func decrypt(data []byte) []byte {
 
     nonceSize := aesgcm.NonceSize()
     nonce := data[saltLength : nonceSize + saltLength]
-//    log.Println("dnonce", len(nonce), hex.Dump(nonce))
+//    log.Println("dnonce", len(nonce))
     encryptedData := data[nonceSize + saltLength : ]
 //    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
 
     plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
-//    log.Println("dplaintext", len(plaintext), hex.Dump(plaintext))
+//    log.Println("dplaintext", len(plaintext))
     check(err)
 
     return plaintext
 }
 
-func handleConnection (clientConn net.Conn) {
+func handleConnection (clientConn net.TCPConn) {
     serviceConn, err := net.Dial("tcp", destination + ":" + port)
     if err != nil {
         log.Println("Error connecting to the service", err)
@@ -105,9 +105,9 @@ func handleConnection (clientConn net.Conn) {
     for {
         //log.Println("READING FROM CLIENT")
         if nr1, err := clientConn.Read(clientData); err == nil {
-//            log.Println("Before Decrypt", nr1)
+//            log.Println("Before Decrypt", nr1, hex.Dump(clientData[:nr1]))
             decryptedClientData := decrypt(clientData[:nr1])
-//            log.Println("After Decrypt", len(decryptedClientData))
+//            log.Println("After Decrypt", len(decryptedClientData), hex.Dump(decryptedClientData))
             _, err := serviceConn.Write(decryptedClientData)
             check(err)
             //log.Println("WRITE TO SERVICE DONE", nw1, hex.Dump(clientData[:nw1]))
@@ -123,13 +123,15 @@ func handleConnection (clientConn net.Conn) {
 }
 
 func listen(port string) {
-    ln, err := net.Listen("tcp", ":" + port)
+    ln, err := net.ListenTCP("tcp", ":" + port)
     check(err)
 
     for {
-        conn, err := ln.Accept()
+        conn, err := ln.AcceptTCP()
         check(err)
 
+        conn.SetReadBuffer(1636)
+        conn.SetWriteBuffer(1636)
         go handleConnection(conn)
     }
 }
@@ -137,8 +139,10 @@ func listen(port string) {
 func readAndSend() {
     reader := bufio.NewReader(os.Stdin)
 
-    conn, err := net.Dial("tcp", destination + ":" + port)
+    conn, err := net.DialTCP("tcp", destination + ":" + port)
     check(err)
+    conn.setReadBuffer(1636)
+    conn.setWriteBuffer(1636)
 
     serverData := make([]byte, 1636)
     go func() {
