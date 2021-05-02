@@ -1,0 +1,85 @@
+CSE 508: Network Security, Spring 2021
+Homework 4: Plugboard Proxy
+
+SBU ID: 112683876
+Name: Manish Adkar
+
+To run the program, in the pbproxy folder,
+<prompt>$ sudo go run dnspoison.go [-l listenport] -p pwdfile destination port
+
+-l listenport       pbproxy operates in reverse-proxy mode. Listens for inbound connections on <listenport> 
+                    and relays them to <destination>:<port>
+-p pwdfile		    Uses the passphrase in the first line of <pwdfile>
+
+destination         reverse-proxy mode: hostname / IP address of the service to relay traffic to
+                    client mode: hostname / IP address of the pbproxy-server
+port                reverse-proxy mode: port of the service to relay traffic to
+                    client mode: port of the pbproxy-server
+
+Strategy for reverse proxy mode:
+First, listens on the provided port for any inbound connections.
+When a connection is accepted, invokes a goroutine to handle the connection concurrently.
+For handling the connection, creates a new TCP connection with the <destination>:<port>.
+Sets up the Readers and Writers and the buffers.
+Invokes a goroutine to concurrently handle (read from tcp service - encrypt data - write to pbproxy client 
+ - flush writer)
+Also handles (read from pbproxy client - decrypt data - write to tcp service - flush writer)
+
+Strategy for client mode:
+Creates a new TCP connection with the pbproxy server on <destination>:<port>.
+Sets up the Readers and Writers and the buffers.
+Invokes a goroutine to concurrently handle (read from pbproxy server - decrypt data - write to stdout 
+- flush writer)
+Also handles (read from pbproxy server - encrypt data - write to pbproxy server - flush writer)
+
+Strategy for encryption:
+Creates a random 8 byte salt and uses it with the passphrase in <pwdfile> to generate AES key with pbkdf2
+Generates a random 12 byte nonce
+Enrypts the data with Seal method
+Prepends the encrypted data with salt and nonce
+Now 1 block of data looks like [salt][nonce][encrypted data]
+
+Strategy for decryption:
+The data obtained contains [salt][nonce][encrypted data]
+Uses the salt to generate the same AES key
+Uses the nonce along with Open method to decrypt the data
+
+Strategy for handling TCP read/write issues:
+It was observed that, while reading data from the encrypted Socket 1.
+the Reader would read data of multiple writes. (as maybe two Writes happened on the socket at one end
+before a Read at the other end)
+Also, sometimes, even if "n" bytes (encrypted) were written by the Writer,
+the Reader at the other end would read less bytes (especially while sending large files to a netcat server
+(as the TCP protocol would send less bytes in one packet - verified via tcpdump)
+This would result in error while decrypting the read buffer as the buffer would contain partial data or
+data from multiple encrypted blocks.
+To mitigate this, a 2 byte header is added to every packet after encryption which denoted the length of
+the whole packet and then sent over the Socket 1
+Now while reading, we first read the first 2 bytes and get to know the actual length of the encrypted packet.
+So now 1 block of data would look like [Length Header][salt][nonce][encrypted data]
+Lets say 'x' is the actual length of the encrypted packet and 'n' bytes were read by the Reader
+in the buffer named 'buff'
+There are three possible cases,
+if x == n
+    removing the 2 byte header and call decrypt with buff
+if x < n
+    remove the 2 byte header and call decrypt with buff[:x]
+    if there is only 1 byte in buff[x:]
+        read one more byte from the Reader and append to buff[x:] (so that we can know the length of next block) 
+    do the same process for buff[x:]
+if x > n
+    how read more x - n bytes from the Reader in a new buffer 'rbuff'
+    call decrypt with buff + rbuff
+
+
+Setup for testing the program:
+go version go1.16.2 linux/amd64
+
+To run/build the program:
+In the source code folder,
+go mod init example.com/pbproxy
+go mod tidy
+go run <program name> <options>
+OR
+go build <program name>
+./<program name> <options>
