@@ -1,26 +1,32 @@
 package main
 
 import (
-    "fmt"
     "flag"
     "log"
     "os"
     "bufio"
-//    "io"
+    "io"
     "net"
     "golang.org/x/crypto/pbkdf2"
     "crypto/aes"
     "crypto/cipher"
     "crypto/rand"
     "crypto/sha256"
-//    "encoding/hex"
+    "encoding/binary"
 )
 
 var (
     destination string
     port string
     passwd string
+)
+
+const (
     saltLength int = 8
+    aesKeyLength int = 32
+    dataHeaderLength int = 2
+    sock1BufferLength int = 4134
+    stdBufferLength int = 4096
 )
 
 func check(e error) {
@@ -29,11 +35,17 @@ func check(e error) {
     }
 }
 
+func prependLengthBytes(data []byte) []byte {
+    lengthHeader := make([]byte, dataHeaderLength)
+    dataLength := uint16(len(data) + dataHeaderLength)
+    binary.BigEndian.PutUint16(lengthHeader, dataLength)
+    return append(lengthHeader, data...)
+}
+
 func encrypt(plaintext []byte) []byte {
     salt := make([]byte, saltLength)
     rand.Read(salt)
-//    log.Println("esalt", len(salt), hex.Dump(salt))
-    aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
+    aesKey := pbkdf2.Key([]byte(passwd), salt, 1000, aesKeyLength, sha256.New)
 
     block, err := aes.NewCipher(aesKey)
     check(err)
@@ -43,21 +55,16 @@ func encrypt(plaintext []byte) []byte {
 
     nonce := make([]byte, aesgcm.NonceSize())
     rand.Read(nonce)
-//    log.Println("enonce", len(nonce), hex.Dump(nonce))
 
     data := append(salt, nonce...)
-//    log.Println("eplaintext", len(plaintext), hex.Dump(plaintext))
     encryptedData := aesgcm.Seal(data, nonce, plaintext, nil)
-//    log.Println("eencryptedData", len(encryptedData), hex.Dump(encryptedData))
+
     return encryptedData
 }
 
 func decrypt(data []byte) []byte {
-
     salt := data[:saltLength]
-//    log.Println("dsalt", len(salt), hex.Dump(salt))
-
-    aesKey := pbkdf2.Key([]byte(passwd), salt, 4096, 32, sha256.New)
+    aesKey := pbkdf2.Key([]byte(passwd), salt, 1000, aesKeyLength, sha256.New)
 
     block, err := aes.NewCipher(aesKey)
     check(err)
@@ -67,126 +74,173 @@ func decrypt(data []byte) []byte {
 
     nonceSize := aesgcm.NonceSize()
     nonce := data[saltLength : nonceSize + saltLength]
-//    log.Println("dnonce", len(nonce))
     encryptedData := data[nonceSize + saltLength : ]
-//    log.Println("dencryptedData", len(encryptedData), hex.Dump(encryptedData))
 
     plaintext, err := aesgcm.Open(nil, nonce, encryptedData, nil)
-//    log.Println("dplaintext", len(plaintext))
     check(err)
 
     return plaintext
 }
 
-func handleConnection (clientConn *net.TCPConn) {
-    serviceConn, err := net.Dial("tcp", destination + ":" + port)
-    if err != nil {
-        log.Println("Error connecting to the service", err)
-        return
-    }
-    serviceData := make([]byte, 4096)
-    go func() {
-        for {
-            //log.Println("READING FROM SERVICE")
-            if nr2, err := serviceConn.Read(serviceData); err == nil {
-//                log.Println("Before Encrypt", nr2)
-                encryptedServiceData := encrypt(serviceData[:nr2])
-//                log.Println("After Encrypt", len(encryptedServiceData))
-                _, err := clientConn.Write(encryptedServiceData)
-                check(err)
-                //log.Println("WRITE TO CLIENT DONE", nw2, hex.Dump(serviceData[:nw2]))
+func handleEncryptedData(buffer []byte, readSize int, reader *bufio.Reader, writer *bufio.Writer) {
+    var startIdx int = 0
+    for startIdx < readSize {
+        if startIdx == readSize - 1 {
+            b, err := reader.ReadByte()
+            if err == nil {
+                buffer = append(buffer, b)
+                readSize = readSize + 1
             } else {
-                //log.Println("BROKE 1", err)
+                log.Println("Error while reading the 2nd length byte", err)
                 break
             }
         }
-    }()
-    clientData := make([]byte, 4132)
-    for {
-        //log.Println("READING FROM CLIENT")
-        if nr1, err := clientConn.Read(clientData); err == nil {
-//            log.Println("Before Decrypt", nr1, hex.Dump(clientData[:nr1]))
-            decryptedClientData := decrypt(clientData[:nr1])
-//            log.Println("After Decrypt", len(decryptedClientData), hex.Dump(decryptedClientData))
-            _, err := serviceConn.Write(decryptedClientData)
-            check(err)
-            //log.Println("WRITE TO SERVICE DONE", nw1, hex.Dump(clientData[:nw1]))
-        } else {
-            //log.Println("BROKE", err)
-            break
+        lenHeader := buffer[startIdx : startIdx + dataHeaderLength]
+        dataLength := int(binary.BigEndian.Uint16(lenHeader))
+        if readSize - startIdx >= dataLength {
+            decryptedData := decrypt(buffer[startIdx + dataHeaderLength : startIdx + dataLength])
+            _, err := writer.Write(decryptedData)
+            if err != nil {
+                log.Println("Error while writing:", err)
+                break
+            }
+            writer.Flush()
+            startIdx = startIdx + dataLength
+        } else if readSize - startIdx < dataLength {
+            remBuffer := make([]byte, dataLength - readSize + startIdx)
+            if n, err := io.ReadFull(reader, remBuffer); err == nil {
+                decryptedData := decrypt(append(buffer[startIdx + dataHeaderLength : readSize], remBuffer[:n]...))
+                _, err := writer.Write(decryptedData)
+                if err != nil {
+                    log.Println("Error while writing:", err)
+                    break
+                }
+                writer.Flush()
+                startIdx = readSize
+            } else {
+                log.Println(err)
+                break
+            }
         }
     }
-
-//    log.Println("Closing...")
-    serviceConn.Close()
-    clientConn.Close()
 }
 
-func listen(port string) {
-    addr, err := net.ResolveTCPAddr("tcp", ":" + port)
-    check(err)
-
-    ln, err := net.ListenTCP("tcp", addr)
-    check(err)
-
-    for {
-        conn, err := ln.AcceptTCP()
-        check(err)
-
-        conn.SetReadBuffer(4132)
-        conn.SetWriteBuffer(4132)
-        go handleConnection(conn)
-    }
-}
-
-func readAndSend() {
-    reader := bufio.NewReader(os.Stdin)
+func clientMode() {
+    stdinReader := bufio.NewReader(os.Stdin)
+    stdoutWriter := bufio.NewWriter(os.Stdout)
 
     addr, err := net.ResolveTCPAddr("tcp", destination + ":" + port)
     check(err)
 
     conn, err := net.DialTCP("tcp", nil, addr)
     check(err)
-    conn.SetReadBuffer(4132)
-    conn.SetWriteBuffer(4132)
+    defer conn.Close()
 
-    serverData := make([]byte, 4132)
+    conn.SetReadBuffer(sock1BufferLength)
+    conn.SetWriteBuffer(sock1BufferLength)
+
+    connReader := bufio.NewReaderSize(conn, sock1BufferLength)
+    if n := connReader.Buffered(); n > 0 {
+        connReader.Discard(n)
+    }
+    connWriter := bufio.NewWriterSize(conn, sock1BufferLength)
+
     go func() {
         for {
-            //log.Println("READING FROM SERVER")
-            if n, err := conn.Read(serverData); err == nil {
-//                log.Println("Before decrypt", n)
-                decryptedData := decrypt(serverData[:n])
-//                log.Println("After decrypt", len(decryptedData))
-                os.Stdout.Write(decryptedData)
-                //log.Println("WRITE TO STDOUT DONE")
+            serverData := make([]byte, sock1BufferLength)
+            if n, err := connReader.Read(serverData); err == nil {
+                handleEncryptedData(serverData[:n], n, connReader, stdoutWriter)
             } else {
-                //log.Println("BROKE")
+                //log.Println("read from server error", err)
                 break
             }
         }
     }()
 
-    stdinData := make([]byte, 4096)
-
     for {
-        //log.Println("READING FROM STDIN")
-        if n, err := reader.Read(stdinData); err == nil {
-            //stdinData = append(stdinData, data)
-        //} else if err == io.EOF {
-//            log.Println("Before encrypt", len(stdinData))
-encryptedData := encrypt(stdinData[:n])
-//            log.Println("After encrypt", len(encryptedData))
-            _, err := conn.Write(encryptedData)
-            check(err)
-          //  stdinData = make([]byte, 0)
-            //log.Println("WRITE TO SERVER DONE")
+        stdinData := make([]byte, stdBufferLength)
+        if n, err := stdinReader.Read(stdinData); err == nil {
+            encryptedData := encrypt(stdinData[:n])
+            data := prependLengthBytes(encryptedData)
+            _, err := connWriter.Write(data)
+            if err != nil {
+                log.Println("Error while writing to pbproxy server:", err)
+                return
+            }
+            connWriter.Flush()
         } else {
-            //log.Println("BROKE 1")
+            //log.Println("stdin read error", err)
             break
         }
     }
-    conn.Close()
+}
+
+func handleConnection(clientConn *net.TCPConn) {
+    serviceConn, err := net.Dial("tcp", destination + ":" + port)
+    defer serviceConn.Close()
+    if err != nil {
+        log.Println("Error connecting to the service at", destination + ":" + port, err)
+        return
+    }
+
+    serviceReader := bufio.NewReader(serviceConn)
+    if n := serviceReader.Buffered(); n > 0 {
+        serviceReader.Discard(n)
+    }
+    serviceWriter := bufio.NewWriter(serviceConn)
+
+    clientReader := bufio.NewReaderSize(clientConn, sock1BufferLength)
+    clientWriter := bufio.NewWriterSize(clientConn, sock1BufferLength)
+
+    go func() {
+        for {
+            serviceData := make([]byte, stdBufferLength)
+            if n, err := serviceReader.Read(serviceData); err == nil {
+                encryptedServiceData := encrypt(serviceData[:n])
+                data := prependLengthBytes(encryptedServiceData)
+                _, err := clientWriter.Write(data)
+                if err != nil {
+                    log.Println("Error while writing to pbproxy client:", err)
+                    return
+                }
+                clientWriter.Flush()
+            } else {
+ //               log.Println("read from service error", err)
+                break
+            }
+        }
+    }()
+
+    for {
+        clientData := make([]byte, sock1BufferLength)
+        if n, err := clientReader.Read(clientData); err == nil {
+            handleEncryptedData(clientData[:n], int(n), clientReader, serviceWriter)
+        } else {
+ //           log.Println("read from client error", err)
+            break
+        }
+    }
+}
+
+func reverseProxyMode(port string) {
+    addr, err := net.ResolveTCPAddr("tcp", ":" + port)
+    check(err)
+
+    ln, err := net.ListenTCP("tcp", addr)
+    check(err)
+
+    log.Println("Listening on port", port)
+
+    for {
+        conn, err := ln.AcceptTCP()
+        check(err)
+        defer conn.Close()
+
+        conn.SetReadBuffer(sock1BufferLength)
+        conn.SetWriteBuffer(sock1BufferLength)
+
+        go handleConnection(conn)
+    }
 }
 
 func main() {
@@ -200,8 +254,8 @@ func main() {
         log.Fatal("Please provide a file containing the password text with option -p\n")
     }
     file, err := os.Open(*pwdFile)
-    check(err)
     defer file.Close()
+    check(err)
 
     scanner := bufio.NewScanner(file)
     for scanner.Scan() {
@@ -210,7 +264,6 @@ func main() {
     }
 
     var args = flag.Args()
-
     if len(args) != 2 {
         log.Fatal("Args expected: 'destination port'\n")
     }
@@ -218,11 +271,10 @@ func main() {
     destination = args[0]
     port = args[1]
 
-    if *listenPort != "" {
-        fmt.Println("Listening on port", *listenPort)
-        listen(*listenPort)
+    if *listenPort == "" {
+        clientMode()
     } else {
-        readAndSend()
+        reverseProxyMode(*listenPort)
     }
 
 }
